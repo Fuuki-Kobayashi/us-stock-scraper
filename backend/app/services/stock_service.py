@@ -9,8 +9,8 @@ from app.models.ticker import Ticker
 
 async def search_tickers(
     session: AsyncSession, query: str, limit: int = 20
-) -> list[Ticker]:
-    """Search tickers by symbol or name."""
+) -> list:
+    """Search tickers by symbol or name. Falls back to Polygon.io API if local DB is empty."""
     pattern = f"%{query.upper()}%"
     stmt = (
         select(Ticker)
@@ -20,7 +20,30 @@ async def search_tickers(
         .limit(limit)
     )
     result = await session.execute(stmt)
-    return list(result.scalars().all())
+    local_results = list(result.scalars().all())
+
+    if local_results:
+        return local_results
+
+    # Fallback: search via Polygon.io API
+    api_results = await polygon_client.search_tickers(query, limit)
+    return [
+        _PolygonSearchResult(
+            symbol=r.get("ticker", ""),
+            name=r.get("name"),
+            exchange=r.get("primary_exchange"),
+        )
+        for r in api_results
+    ]
+
+
+class _PolygonSearchResult:
+    """Lightweight object matching Ticker interface for search results."""
+
+    def __init__(self, symbol: str, name: str | None, exchange: str | None):
+        self.symbol = symbol
+        self.name = name
+        self.exchange = exchange
 
 
 async def get_chart_data(

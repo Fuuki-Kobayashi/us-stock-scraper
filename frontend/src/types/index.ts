@@ -95,9 +95,8 @@ export interface OHLCVData {
 // Search result
 export interface SearchResult {
   symbol: string;
-  name: string;
-  exchange: string;
-  sector: string;
+  name: string | null;
+  exchange: string | null;
 }
 
 // User settings

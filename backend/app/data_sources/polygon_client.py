@@ -47,6 +47,21 @@ class PolygonFreeSource(StockDataSource):
                 return None
             raise
 
+    async def search_tickers(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        url = f"{BASE_URL}/v3/reference/tickers"
+        params = {
+            "search": query,
+            "market": "stocks",
+            "active": "true",
+            "limit": str(limit),
+        }
+        try:
+            data = await self._request(url, params)
+            return data.get("results", [])
+        except Exception as e:
+            logger.warning("Polygon ticker search failed: %s", e)
+            return []
+
     async def tickers_list(self, page: int = 1) -> dict[str, Any]:
         url = f"{BASE_URL}/v3/reference/tickers"
         params = {

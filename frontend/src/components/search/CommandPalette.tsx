@@ -64,9 +64,11 @@ export function CommandPalette() {
                     {result.name}
                   </span>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {result.sector}
-                </span>
+                {result.exchange && (
+                  <span className="text-xs text-muted-foreground">
+                    {result.exchange}
+                  </span>
+                )}
               </Command.Item>
             ))}
           </Command.List>
