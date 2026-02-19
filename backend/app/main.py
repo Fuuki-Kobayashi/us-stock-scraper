@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 
 from app.database import async_session, engine
+from app.models.daily_price import DailyPrice  # noqa: F401 (register model)
 from app.models.ticker import Base, Ticker
 from app.routers import admin, settings, stocks, surges, tracking
 from app.tasks.scheduler import scheduler, setup_scheduler

@@ -12,11 +12,13 @@ from app.models.ticker import Ticker
 from app.schemas.admin import (
     AdminStatusResponse,
     BackfillResponse,
+    BulkDownloadResponse,
     CollectResponse,
     CollectionLogResponse,
     TickerSyncResponse,
 )
 from app.tasks.backfill import run_backfill
+from app.tasks.bulk_download import run_bulk_download
 from app.tasks.daily_collection import run_daily_collection
 from app.tasks.scheduler import scheduler
 from app.tasks.ticker_sync import run_ticker_sync
@@ -80,6 +82,23 @@ async def backfill(
         )
     except Exception as e:
         return BackfillResponse(message=f"Backfill failed: {e}", log_id=None)
+
+
+@router.post("/bulk-download", response_model=BulkDownloadResponse)
+async def bulk_download(
+    from_date: date = Query(alias="from_date"),
+    to_date: date = Query(alias="to_date"),
+):
+    try:
+        log_id = await run_bulk_download(from_date, to_date)
+        return BulkDownloadResponse(
+            message=f"Bulk download completed from {from_date} to {to_date}",
+            log_id=log_id,
+        )
+    except Exception as e:
+        return BulkDownloadResponse(
+            message=f"Bulk download failed: {e}", log_id=None
+        )
 
 
 @router.post("/ticker-sync", response_model=TickerSyncResponse)
