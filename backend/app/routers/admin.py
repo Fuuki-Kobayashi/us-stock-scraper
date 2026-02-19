@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -14,10 +14,12 @@ from app.schemas.admin import (
     BackfillResponse,
     CollectResponse,
     CollectionLogResponse,
+    TickerSyncResponse,
 )
 from app.tasks.backfill import run_backfill
 from app.tasks.daily_collection import run_daily_collection
 from app.tasks.scheduler import scheduler
+from app.tasks.ticker_sync import run_ticker_sync
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -54,7 +56,7 @@ async def manual_collect(
     target_date: date = Query(default=None, alias="date"),
 ):
     if target_date is None:
-        target_date = date.today()
+        target_date = datetime.now(timezone.utc).date()
 
     try:
         log_id = await run_daily_collection(target_date)
@@ -78,3 +80,16 @@ async def backfill(
         )
     except Exception as e:
         return BackfillResponse(message=f"Backfill failed: {e}", log_id=None)
+
+
+@router.post("/ticker-sync", response_model=TickerSyncResponse)
+async def manual_ticker_sync():
+    try:
+        log_id = await run_ticker_sync()
+        return TickerSyncResponse(
+            message="Ticker sync completed", log_id=log_id
+        )
+    except Exception as e:
+        return TickerSyncResponse(
+            message=f"Ticker sync failed: {e}", log_id=None
+        )

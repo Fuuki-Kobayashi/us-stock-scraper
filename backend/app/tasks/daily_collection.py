@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from app.models.user_setting import UserSetting
 logger = logging.getLogger(__name__)
 
 TRACKING_DAYS = [1, 3, 7, 30]
+MAX_PREV_DAY_LOOKBACK = 7
 
 
 async def _get_threshold(session: AsyncSession) -> float:
@@ -44,19 +45,25 @@ async def _collect_surges_for_date(
         logger.info("No results for %s", target_date)
         return 0
 
-    # Get previous day data for prev_close
-    prev_date = target_date - timedelta(days=1)
-    # Skip weekends for previous date
-    while prev_date.weekday() >= 5:
-        prev_date -= timedelta(days=1)
-
-    prev_results = await polygon_client.grouped_daily(prev_date)
+    # Find previous trading day via Polygon API (handles weekends + holidays)
     prev_close_map: dict[str, float] = {}
-    for item in prev_results:
-        symbol = item.get("T", "")
-        close = item.get("c")
-        if symbol and close:
-            prev_close_map[symbol] = float(close)
+    prev_date = target_date - timedelta(days=1)
+    for _ in range(MAX_PREV_DAY_LOOKBACK):
+        while prev_date.weekday() >= 5:
+            prev_date -= timedelta(days=1)
+        prev_results = await polygon_client.grouped_daily(prev_date)
+        if prev_results:
+            for item in prev_results:
+                symbol = item.get("T", "")
+                close = item.get("c")
+                if symbol and close:
+                    prev_close_map[symbol] = float(close)
+            logger.info("Previous trading day: %s (%d tickers)", prev_date, len(prev_close_map))
+            break
+        logger.info("No data for %s (holiday?), trying earlier date", prev_date)
+        prev_date -= timedelta(days=1)
+    else:
+        logger.warning("No previous trading day found within %d days", MAX_PREV_DAY_LOOKBACK)
 
     surge_count = 0
     for item in results:
@@ -143,7 +150,7 @@ async def _update_tracking(session: AsyncSession, target_date: date) -> None:
 async def run_daily_collection(target_date: date | None = None) -> int:
     """Run the daily collection job. Returns the collection log ID."""
     if target_date is None:
-        target_date = date.today()
+        target_date = datetime.now(timezone.utc).date()
 
     async with async_session() as session:
         log = CollectionLog(job_type="daily_collection", status="running")

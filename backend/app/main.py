@@ -1,16 +1,32 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func, select
 
-from app.database import engine
-from app.models.ticker import Base
+from app.database import async_session, engine
+from app.models.ticker import Base, Ticker
 from app.routers import admin, settings, stocks, surges, tracking
 from app.tasks.scheduler import scheduler, setup_scheduler
+from app.tasks.ticker_sync import run_ticker_sync
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+async def _initial_ticker_sync() -> None:
+    """Run ticker sync if the tickers table is empty."""
+    async with async_session() as session:
+        result = await session.execute(select(func.count(Ticker.symbol)))
+        count = result.scalar() or 0
+    if count == 0:
+        logger.info("Tickers table empty, running initial sync...")
+        await run_ticker_sync()
+        logger.info("Initial ticker sync completed")
+    else:
+        logger.info("Tickers table has %d records, skipping initial sync", count)
 
 
 @asynccontextmanager
@@ -23,6 +39,9 @@ async def lifespan(app: FastAPI):
     setup_scheduler()
     scheduler.start()
     logger.info("Scheduler started")
+
+    # Run initial ticker sync in background (non-blocking)
+    asyncio.create_task(_initial_ticker_sync())
 
     yield
 

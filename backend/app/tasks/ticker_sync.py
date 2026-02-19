@@ -12,11 +12,11 @@ from app.models.ticker import Ticker
 logger = logging.getLogger(__name__)
 
 
-async def _sync_page(session: AsyncSession, page: int) -> tuple[int, str | None]:
+async def _sync_page(session: AsyncSession, cursor: str | None = None) -> tuple[int, str | None]:
     """Sync one page of tickers. Returns (count, next_cursor)."""
-    data = await polygon_client.tickers_list(page)
+    data = await polygon_client.tickers_list(cursor)
     results = data.get("results", [])
-    next_url = data.get("next_url")
+    next_cursor = data.get("next_cursor")
     count = 0
 
     for item in results:
@@ -50,7 +50,7 @@ async def _sync_page(session: AsyncSession, page: int) -> tuple[int, str | None]
             session.add(ticker)
         count += 1
 
-    return count, next_url
+    return count, next_cursor
 
 
 async def run_ticker_sync() -> int:
@@ -63,15 +63,17 @@ async def run_ticker_sync() -> int:
 
         try:
             total_count = 0
-            page = 1
+            cursor: str | None = None
+            pages_fetched = 0
             max_pages = 10  # Safety limit for free tier
 
-            while page <= max_pages:
-                count, next_url = await _sync_page(session, page)
+            while pages_fetched < max_pages:
+                count, next_cursor = await _sync_page(session, cursor)
                 total_count += count
-                if not next_url or count == 0:
+                pages_fetched += 1
+                if not next_cursor or count == 0:
                     break
-                page += 1
+                cursor = next_cursor
 
             log.status = "completed"
             log.records_count = total_count
