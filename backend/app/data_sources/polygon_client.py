@@ -62,19 +62,28 @@ class PolygonFreeSource(StockDataSource):
             logger.warning("Polygon ticker search failed: %s", e)
             return []
 
-    async def tickers_list(self, page: int = 1) -> dict[str, Any]:
+    async def tickers_list(self, cursor: str | None = None) -> dict[str, Any]:
         url = f"{BASE_URL}/v3/reference/tickers"
-        params = {
+        params: dict[str, str] = {
             "market": "stocks",
             "active": "true",
             "limit": "1000",
         }
-        if page > 1:
-            params["cursor"] = str(page)
+        if cursor:
+            params["cursor"] = cursor
         data = await self._request(url, params)
+        # Extract cursor from next_url for pagination
+        next_cursor: str | None = None
+        next_url = data.get("next_url")
+        if next_url:
+            from urllib.parse import parse_qs, urlparse
+
+            parsed = urlparse(next_url)
+            qs = parse_qs(parsed.query)
+            next_cursor = qs.get("cursor", [None])[0]
         return {
             "results": data.get("results", []),
-            "next_url": data.get("next_url"),
+            "next_cursor": next_cursor,
             "count": data.get("count", 0),
         }
 

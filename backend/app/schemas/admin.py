@@ -30,3 +30,8 @@ class CollectResponse(BaseModel):
 class BackfillResponse(BaseModel):
     message: str
     log_id: int | None = None
+
+
+class TickerSyncResponse(BaseModel):
+    message: str
+    log_id: int | None = None
