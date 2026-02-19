@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select, text
 
 from app.database import async_session, engine
 from app.models.daily_price import DailyPrice  # noqa: F401 (register model)
+from app.models.dividend import Dividend  # noqa: F401 (register model)
+from app.models.stock_split import StockSplit  # noqa: F401 (register model)
 from app.models.ticker import Base, Ticker
 from app.routers import admin, settings, stocks, surges, tracking
 from app.tasks.scheduler import scheduler, setup_scheduler
@@ -30,12 +32,42 @@ async def _initial_ticker_sync() -> None:
         logger.info("Tickers table has %d records, skipping initial sync", count)
 
 
+async def _migrate_tickers_table() -> None:
+    """Add new columns to existing tickers table (SQLite ALTER TABLE)."""
+    new_columns = {
+        "market_cap": "FLOAT",
+        "shares_outstanding": "BIGINT",
+        "weighted_shares_outstanding": "BIGINT",
+        "total_employees": "BIGINT",
+        "description": "TEXT",
+        "homepage_url": "VARCHAR(500)",
+        "list_date": "DATE",
+        "primary_exchange": "VARCHAR(20)",
+        "cik": "VARCHAR(20)",
+        "details_updated_at": "DATETIME",
+    }
+    async with engine.begin() as conn:
+        existing = await conn.run_sync(
+            lambda sync_conn: {
+                col["name"] for col in inspect(sync_conn).get_columns("tickers")
+            }
+        )
+        for col_name, col_type in new_columns.items():
+            if col_name not in existing:
+                await conn.execute(
+                    text(f"ALTER TABLE tickers ADD COLUMN {col_name} {col_type}")
+                )
+                logger.info("Added column tickers.%s", col_name)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables created")
+
+    await _migrate_tickers_table()
 
     setup_scheduler()
     scheduler.start()

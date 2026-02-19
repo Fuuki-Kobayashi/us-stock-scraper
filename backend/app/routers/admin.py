@@ -18,7 +18,12 @@ from app.schemas.admin import (
     TickerSyncResponse,
 )
 from app.tasks.backfill import run_backfill
-from app.tasks.bulk_download import run_bulk_download
+from app.tasks.bulk_download import (
+    run_bulk_download,
+    run_dividends_download,
+    run_splits_download,
+    run_ticker_enrichment,
+)
 from app.tasks.daily_collection import run_daily_collection
 from app.tasks.scheduler import scheduler
 from app.tasks.ticker_sync import run_ticker_sync
@@ -98,6 +103,45 @@ async def bulk_download(
     except Exception as e:
         return BulkDownloadResponse(
             message=f"Bulk download failed: {e}", log_id=None
+        )
+
+
+@router.post("/ticker-enrichment", response_model=BulkDownloadResponse)
+async def ticker_enrichment():
+    try:
+        log_id = await run_ticker_enrichment()
+        return BulkDownloadResponse(
+            message="Ticker enrichment completed", log_id=log_id
+        )
+    except Exception as e:
+        return BulkDownloadResponse(
+            message=f"Ticker enrichment failed: {e}", log_id=None
+        )
+
+
+@router.post("/dividends-download", response_model=BulkDownloadResponse)
+async def dividends_download():
+    try:
+        log_id = await run_dividends_download()
+        return BulkDownloadResponse(
+            message="Dividends download completed", log_id=log_id
+        )
+    except Exception as e:
+        return BulkDownloadResponse(
+            message=f"Dividends download failed: {e}", log_id=None
+        )
+
+
+@router.post("/splits-download", response_model=BulkDownloadResponse)
+async def splits_download():
+    try:
+        log_id = await run_splits_download()
+        return BulkDownloadResponse(
+            message="Splits download completed", log_id=log_id
+        )
+    except Exception as e:
+        return BulkDownloadResponse(
+            message=f"Splits download failed: {e}", log_id=None
         )
 
 
