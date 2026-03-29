@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import date
 from typing import Any
@@ -11,23 +12,37 @@ from app.utils.rate_limiter import RateLimiter
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.polygon.io"
+MAX_RETRIES = 3
+RETRY_BACKOFF = 65  # seconds to wait on 429
 
 
 class PolygonFreeSource(StockDataSource):
     def __init__(self) -> None:
         self._api_key = settings.POLYGON_API_KEY
-        self._rate_limiter = RateLimiter(max_tokens=5, refill_rate=5 / 60)
+        self._rate_limiter = RateLimiter(max_tokens=4, refill_rate=4 / 60)
         self._client = httpx.AsyncClient(timeout=30.0)
 
     async def close(self) -> None:
         await self._client.aclose()
 
     async def _request(self, url: str, params: dict | None = None) -> dict[str, Any]:
-        await self._rate_limiter.acquire()
         if params is None:
             params = {}
         params["apiKey"] = self._api_key
-        response = await self._client.get(url, params=params)
+
+        for attempt in range(MAX_RETRIES):
+            await self._rate_limiter.acquire()
+            response = await self._client.get(url, params=params)
+            if response.status_code == 429:
+                logger.warning(
+                    "Rate limited (429), waiting %ds (attempt %d/%d)",
+                    RETRY_BACKOFF, attempt + 1, MAX_RETRIES,
+                )
+                await asyncio.sleep(RETRY_BACKOFF)
+                continue
+            response.raise_for_status()
+            return response.json()
+
         response.raise_for_status()
         return response.json()
 
@@ -85,6 +100,46 @@ class PolygonFreeSource(StockDataSource):
             "results": data.get("results", []),
             "next_cursor": next_cursor,
             "count": data.get("count", 0),
+        }
+
+    async def dividends(
+        self, cursor: str | None = None, limit: int = 1000
+    ) -> dict[str, Any]:
+        url = f"{BASE_URL}/v3/reference/dividends"
+        params: dict[str, str] = {"limit": str(limit), "order": "asc"}
+        if cursor:
+            params["cursor"] = cursor
+        data = await self._request(url, params)
+        next_cursor: str | None = None
+        next_url = data.get("next_url")
+        if next_url:
+            from urllib.parse import parse_qs, urlparse
+            parsed = urlparse(next_url)
+            qs = parse_qs(parsed.query)
+            next_cursor = qs.get("cursor", [None])[0]
+        return {
+            "results": data.get("results", []),
+            "next_cursor": next_cursor,
+        }
+
+    async def splits(
+        self, cursor: str | None = None, limit: int = 1000
+    ) -> dict[str, Any]:
+        url = f"{BASE_URL}/v3/reference/splits"
+        params: dict[str, str] = {"limit": str(limit), "order": "asc"}
+        if cursor:
+            params["cursor"] = cursor
+        data = await self._request(url, params)
+        next_cursor: str | None = None
+        next_url = data.get("next_url")
+        if next_url:
+            from urllib.parse import parse_qs, urlparse
+            parsed = urlparse(next_url)
+            qs = parse_qs(parsed.query)
+            next_cursor = qs.get("cursor", [None])[0]
+        return {
+            "results": data.get("results", []),
+            "next_cursor": next_cursor,
         }
 
     async def aggregate_bars(

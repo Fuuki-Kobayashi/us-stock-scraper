@@ -35,3 +35,8 @@ class BackfillResponse(BaseModel):
 class TickerSyncResponse(BaseModel):
     message: str
     log_id: int | None = None
+
+
+class BulkDownloadResponse(BaseModel):
+    message: str
+    log_id: int | None = None
